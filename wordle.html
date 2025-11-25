@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetridle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=VT323&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #121213; /* Wordle Dark Mode Bg */
+            color: white;
+            overflow: hidden; /* Prevent scrolling on mobile while playing */
+        }
+
+        .game-font {
+            font-family: 'VT323', monospace;
+        }
+
+        /* Custom Scrollbar for the guess list */
+        .scroller::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scroller::-webkit-scrollbar-track {
+            background: #121213; 
+        }
+        .scroller::-webkit-scrollbar-thumb {
+            background: #3a3a3c; 
+            border-radius: 4px;
+        }
+        .scroller::-webkit-scrollbar-thumb:hover {
+            background: #538d4e; 
+        }
+
+        .tile {
+            transition: all 0.2s;
+        }
+        
+        /* Wordle Colors */
+        .correct { background-color: #538d4e; border-color: #538d4e; }
+        .present { background-color: #b59f3b; border-color: #b59f3b; }
+        .absent { background-color: #3a3a3c; border-color: #3a3a3c; }
+        
+        /* Keyboard Key Styles */
+        .key-btn {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #818384;
+            color: white;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: default;
+            transition: background-color 0.2s;
+            height: 36px;
+            font-size: 0.85rem;
+            margin: 0 2px;
+            flex: 1;
+        }
+        .key-correct { background-color: #538d4e !important; border-color: #538d4e !important; }
+        .key-present { background-color: #b59f3b !important; border-color: #b59f3b !important; }
+        .key-absent { background-color: #3a3a3c !important; border-color: #3a3a3c !important; }
+
+        canvas {
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 2px solid #3a3a3c;
+        }
+
+        .modal {
+            backdrop-filter: blur(5px);
+        }
+
+        /* Input styling for the final guess phase */
+        #finalInput {
+             letter-spacing: 0.2em;
+             padding-left: 0.3em;
+             padding-right: 0.3em;
+             font-family: 'Inter', sans-serif;
+        }
+
+        /* Animation for switching views */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center justify-center">
+
+    <!-- Header -->
+    <div class="w-full max-w-4xl flex justify-between items-center p-4 border-b border-gray-700 bg-[#121213] z-10">
+        <div class="flex flex-col">
+            <h1 class="text-2xl md:text-3xl font-bold tracking-wider uppercase">Tetri<span class="text-[#538d4e]">dle</span></h1>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div class="text-[#538d4e] font-bold md:text-xl text-sm tracking-wide">
+                🔥 STREAK: <span id="uiStreak">0</span>
+            </div>
+            <button onclick="manualReset()" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold transition">RESET</button>
+        </div>
+    </div>
+
+    <!-- Main Game Area -->
+    <div class="flex-1 w-full max-w-4xl flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- Left Column: Tetris Board OR Final Guess UI -->
+        <div class="flex-1 flex flex-col items-center justify-center p-2 bg-[#121213] relative">
+            
+            <!-- 1. The Game Canvas Container -->
+            <div id="gameContainer" class="relative">
+                <canvas id="gameCanvas" width="250" height="500" class="bg-black rounded"></canvas>
+                
+                <!-- Start Overlay -->
+                <div id="startOverlay" class="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
+                    <div class="text-center animate-pulse">
+                        <p class="text-2xl font-bold mb-2 game-font text-[#538d4e]">PRESS START</p>
+                        <button onclick="startGame()" class="px-6 py-3 bg-[#538d4e] hover:bg-green-600 text-white font-bold rounded shadow-lg">
+                            PLAY
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. The Final Phase UI (Replaces Canvas on Game Over) -->
+            <div id="finalPhaseUi" class="hidden w-[250px] h-[500px] bg-[#1a1a1b] border-2 border-[#538d4e] rounded flex flex-col items-center justify-center p-6 text-center fade-in shadow-[0_0_20px_rgba(83,141,78,0.3)]">
+                <h2 id="finalTitle" class="text-3xl font-bold mb-2 text-white uppercase">Grid Full!</h2>
+                <p id="finalMessage" class="text-gray-400 text-sm mb-8">The Tetris phase is over.<br>Review your clues on the right.</p>
+                
+                <div class="w-full mb-8">
+                    <label class="text-xs text-[#538d4e] font-bold uppercase tracking-widest mb-2 block">Final Answer</label>
+                    <input type="text" id="finalInput" maxlength="5" class="w-full bg-black/50 border-b-2 border-gray-600 text-center text-3xl font-bold uppercase focus:outline-none focus:border-[#538d4e] text-white py-3 placeholder-gray-700" placeholder="?????">
+                </div>
+
+                <button onclick="submitFinalGuess()" class="w-full py-3 bg-[#538d4e] hover:bg-green-600 text-white font-bold rounded transition uppercase tracking-wide shadow-lg">
+                    Submit Guess
+                </button>
+            </div>
+
+            <!-- Mobile Controls (Only visible during Tetris phase) -->
+            <div id="mobileControls" class="md:hidden grid grid-cols-4 gap-2 mt-4 w-[250px]">
+                <button class="p-4 bg-gray-800 rounded active:bg-gray-700" id="btnLeft"><i class="fa-solid fa-arrow-left"></i></button>
+                <button class="p-4 bg-gray-800 rounded active:bg-gray-700" id="btnDown"><i class="fa-solid fa-arrow-down"></i></button>
+                <button class="p-4 bg-gray-800 rounded active:bg-gray-700" id="btnRight"><i class="fa-solid fa-arrow-right"></i></button>
+                <button class="p-4 bg-gray-800 rounded active:bg-gray-700" id="btnRotate"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+        </div>
+
+        <!-- Right: Wordle Log -->
+        <div class="flex-1 bg-[#121213] border-l border-gray-700 flex flex-col min-h-0 relative">
+            <div class="p-4 border-b border-gray-700 bg-[#121213]">
+                <h2 class="font-bold text-gray-300 uppercase text-sm tracking-wide">Clue History</h2>
+                <p class="text-xs text-gray-500 mt-1">Lines cleared: <span id="scoreDisplay">0</span></p>
+            </div>
+            
+            <!-- Guesses Container -->
+            <div id="guessContainer" class="flex-1 overflow-y-auto p-4 space-y-2 scroller pb-2">
+                <!-- Empty State -->
+                <div class="text-center text-gray-600 mt-10 italic text-sm">
+                    Clear a line in Tetris<br>to reveal a guess.
+                </div>
+            </div>
+
+            <!-- Virtual Keyboard -->
+            <div class="p-2 bg-[#121213] border-t border-gray-700 z-10 shrink-0">
+                <div class="max-w-sm mx-auto space-y-1.5" id="keyboardContainer">
+                    <!-- Keyboard generated by JS -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Result Modal (Win/Loss) -->
+    <div id="resultModal" class="fixed inset-0 bg-black/90 modal z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#121213] border border-gray-700 p-6 rounded-lg max-w-sm w-full text-center">
+            <div id="resultIcon" class="text-6xl mb-4"></div>
+            <h2 id="resultTitle" class="text-2xl font-bold mb-2"></h2>
+            <p id="resultMessage" class="text-gray-300 mb-6"></p>
+            <div class="bg-gray-800 p-3 rounded mb-6">
+                <span class="text-xs text-gray-500 uppercase">Secret Word</span>
+                <div id="revealWord" class="text-2xl font-bold tracking-widest text-[#538d4e]"></div>
+            </div>
+            <button onclick="restartGame()" class="w-full py-3 bg-white text-black font-bold rounded hover:bg-gray-200">
+                PLAY AGAIN
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Constants ---
+        const COLS = 5;
+        const ROWS = 10; 
+        const BLOCK_SIZE = 50; 
+        
+        // A curated list of 5-letter words (Subset for demo purposes) used as fallback
+        const DEFAULT_WORDS = [
+            "ALERT", "ARGUE", "BEACH", "BEGIN", "BLAME", "BREAD", "BREAK", "BRICK", "BRING", "BUILD",
+            "CAUSE", "CHAIR", "CHECK", "CHEST", "CLAIM", "CLASS", "CLEAN", "CLEAR", "CLIMB", "CLOCK",
+            "CLOSE", "COACH", "COAST", "COUNT", "COVER", "CROWD", "CURVE", "CYCLE", "DANCE", "DOUBT",
+            "DRIVE", "EARTH", "ENEMY", "ENTER", "ERROR", "EVENT", "FAITH", "FAULT", "FIELD", "FINAL",
+            "FLOOR", "FOCUS", "FORCE", "FRAME", "FRESH", "FRONT", "FRUIT", "GLASS", "GRANT", "GRASS",
+            "GREEN", "GROUP", "GUARD", "GUESS", "GUIDE", "HEART", "HEAVY", "HORSE", "HOTEL", "HOUSE",
+            "IMAGE", "INDEX", "INPUT", "ISSUE", "JUDGE", "KNIFE", "LAUGH", "LAYER", "LEVEL", "LIGHT",
+            "LIMIT", "LUNCH", "MAJOR", "MARCH", "MATCH", "METAL", "MODEL", "MONEY", "MONTH", "MOTOR",
+            "MOUTH", "MUSIC", "NIGHT", "NOISE", "NORTH", "NOVEL", "NURSE", "OFFER", "ORDER", "OTHER",
+            "OWNER", "PANEL", "PAPER", "PARTY", "PEACE", "PHASE", "PHONE", "PIECE", "PILOT", "PITCH",
+            "PLACE", "PLANE", "PLANT", "PLATE", "POINT", "POUND", "POWER", "PRESS", "PRICE", "PRIDE",
+            "PRIZE", "PROOF", "QUEEN", "RADIO", "RANGE", "RATIO", "REACH", "REPLY", "RIGHT", "RIVER",
+            "ROUND", "ROUTE", "SCALE", "SCENE", "SCOPE", "SCORE", "SENSE", "SHAPE", "SHARE", "SHEEP",
+            "SHEET", "SHIFT", "SHIRT", "SHOCK", "SIGHT", "SKILL", "SLEEP", "SMILE", "SMOKE", "SOUND",
+            "SOUTH", "SPACE", "SPEED", "SPITE", "SPORT", "SQUAD", "STAFF", "STAGE", "START", "STATE",
+            "STEAM", "STEEL", "STOCK", "STONE", "STORE", "STUDY", "STUFF", "STYLE", "SUGAR", "TABLE",
+            "TASTE", "TERRY", "THEME", "THING", "TITLE", "TOTAL", "TOUCH", "TOWER", "TRACK", "TRADE",
+            "TRAIN", "TREAT", "TRUCK", "TRUST", "TRUTH", "UNCLE", "UNION", "UNITY", "VALUE", "VIDEO",
+            "VISIT", "VOICE", "WASTE", "WATCH", "WATER", "WHEEL", "WHOLE", "WOMAN", "WORLD", "WORRY",
+            "WRITE", "WRONG", "YOUTH", "ZEBRA"
+        ];
+
+        let WORDS = [...DEFAULT_WORDS]; // Start with default, overwrite if file loads
+
+        // Standard Tetromino definitions using Square Matrices
+        const SHAPES = [
+            [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
+            [[1,1],[1,1]], // O
+            [[0,1,0],[1,1,1],[0,0,0]], // T
+            [[0,0,1],[1,1,1],[0,0,0]], // L
+            [[1,0,0],[1,1,1],[0,0,0]], // J
+            [[0,1,1],[1,1,0],[0,0,0]], // S
+            [[1,1,0],[0,1,1],[0,0,0]]  // Z
+        ];
+
+        const COLORS = ['#62a6b0', '#c9b458', '#9e42f5', '#e68a3e', '#3e78e6', '#538d4e', '#e63e3e'];
+
+        // Changed to flat distribution as requested
+        let availableLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        
+        // --- Game State ---
+        let canvas, ctx;
+        let grid = []; 
+        let currentPiece = null;
+        let score = 0;
+        let gameOver = false;
+        let dropCounter = 0;
+        let lastTime = 0;
+        let dropInterval = 1000;
+        let targetWord = "";
+        let solvedIndices = []; // Tracks which indices [0-4] are successfully found (Green)
+        let animationId = null;
+        let keyStates = {}; // Stores 'correct', 'present', 'absent' for keyboard
+        let guessHistory = []; // Stores history for sorting
+        let streak = 0; // Winning streak
+
+        // --- Initialization ---
+        window.onload = async () => {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr * (rect.width / 250), dpr * (rect.height / 500));
+
+            document.addEventListener('keydown', handleInput);
+            setupTouchControls();
+            initKeyboard();
+
+            // Attempt to load external words
+            await loadExternalWords();
+        };
+
+        async function loadExternalWords() {
+            try {
+                const response = await fetch('wordlewords.txt');
+                if (response.ok) {
+                    const text = await response.text();
+                    // Process text: split by newline, trim whitespace, uppercase, filter for exactly 5 letters
+                    const customWords = text.split(/\r?\n/)
+                        .map(w => w.trim().toUpperCase())
+                        .filter(w => w.length === 5 && /^[A-Z]+$/.test(w));
+                    
+                    if (customWords.length > 0) {
+                        WORDS = customWords;
+                        console.log(`Successfully loaded ${WORDS.length} words from wordlewords.txt`);
+                    } else {
+                        console.warn("wordlewords.txt was loaded but contained no valid 5-letter words.");
+                    }
+                } else {
+                    console.warn("wordlewords.txt not found or could not be loaded. Using default dictionary.");
+                }
+            } catch (e) {
+                console.warn("Error loading wordlewords.txt (likely CORS or file missing). Using default dictionary.", e);
+            }
+        }
+
+        function initKeyboard() {
+            const rows = [
+                'QWERTYUIOP',
+                'ASDFGHJKL',
+                'ZXCVBNM'
+            ];
+            const container = document.getElementById('keyboardContainer');
+            container.innerHTML = '';
+            
+            rows.forEach(row => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'flex justify-center w-full';
+                row.split('').forEach(char => {
+                    const keyDiv = document.createElement('div');
+                    keyDiv.className = 'key-btn';
+                    keyDiv.id = `key-${char}`;
+                    keyDiv.innerText = char;
+                    rowDiv.appendChild(keyDiv);
+                    keyStates[char] = '';
+                });
+                container.appendChild(rowDiv);
+            });
+        }
+
+        function updateKeyboard(letter, status) {
+            const currentStatus = keyStates[letter];
+            let newStatus = currentStatus;
+
+            // Priority: correct > present > absent > ''
+            if (status === 'correct') {
+                newStatus = 'correct';
+            } else if (status === 'present' && currentStatus !== 'correct') {
+                newStatus = 'present';
+            } else if (status === 'absent' && currentStatus !== 'correct' && currentStatus !== 'present') {
+                newStatus = 'absent';
+            }
+
+            if (newStatus !== currentStatus) {
+                keyStates[letter] = newStatus;
+                const keyEl = document.getElementById(`key-${letter}`);
+                if (keyEl) {
+                    keyEl.className = `key-btn key-${newStatus}`;
+                }
+            }
+        }
+
+        function setupTouchControls() {
+            const addTouch = (id, fn) => {
+                const btn = document.getElementById(id);
+                btn.addEventListener('touchstart', (e) => { e.preventDefault(); fn(); });
+                btn.addEventListener('mousedown', (e) => { e.preventDefault(); fn(); });
+            };
+            addTouch('btnLeft', () => move(-1));
+            addTouch('btnRight', () => move(1));
+            addTouch('btnDown', () => drop());
+            addTouch('btnRotate', () => rotate());
+        }
+
+        function startGame() {
+            document.getElementById('startOverlay').classList.add('hidden');
+            resetGameInternal();
+            loop();
+        }
+
+        function manualReset() {
+            streak = 0;
+            document.getElementById('uiStreak').innerText = streak;
+            restartGame();
+        }
+
+        function restartGame() {
+            // UI Resets
+            document.getElementById('finalPhaseUi').classList.add('hidden'); // Hide final ui
+            document.getElementById('gameContainer').classList.remove('hidden'); // Show canvas
+            document.getElementById('mobileControls').classList.remove('hidden'); // Show controls
+            
+            document.getElementById('resultModal').classList.add('hidden');
+            document.getElementById('guessContainer').innerHTML = `
+                <div class="text-center text-gray-600 mt-10 italic text-sm">
+                    Clear a line in Tetris<br>to reveal a guess.
+                </div>`;
+            document.getElementById('finalInput').value = '';
+            
+            // Reset to full alphabet
+            availableLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            
+            // Reset History
+            guessHistory = [];
+
+            // Reset Keyboard
+            initKeyboard();
+
+            if (animationId) cancelAnimationFrame(animationId);
+            startGame();
+        }
+
+        function resetGameInternal() {
+            grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+            score = 0;
+            document.getElementById('scoreDisplay').innerText = score;
+            gameOver = false;
+            dropInterval = 1000;
+            // Use the potentially updated WORDS array
+            targetWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+            solvedIndices = [false, false, false, false, false]; // Reset solved mask
+            console.log("Secret Word:", targetWord); 
+            spawnPiece();
+        }
+
+        // --- Tetris Logic ---
+
+        function getRandomLetter() {
+            if (availableLetters.length === 0) return '?'; // Should be rare
+            const index = Math.floor(Math.random() * availableLetters.length);
+            return availableLetters[index];
+        }
+
+        function spawnPiece() {
+            const typeId = Math.floor(Math.random() * SHAPES.length);
+            const shapePattern = SHAPES[typeId];
+            
+            const matrix = shapePattern.map(row => 
+                row.map(value => value ? getRandomLetter() : 0)
+            );
+
+            currentPiece = {
+                matrix: matrix,
+                x: Math.floor((COLS - matrix[0].length) / 2),
+                y: -1,
+                color: COLORS[typeId]
+            };
+
+            if (collide(grid, { ...currentPiece, y: 0 })) {
+                gameOver = true;
+                triggerFinalPhase("GRID FULL!", "The Tetris phase is over.<br>Review your clues on the right.");
+            }
+        }
+
+        function collide(arena, player) {
+            const [m, o] = [player.matrix, player];
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0) { 
+                        if ((y + o.y < 0) || 
+                            (y + o.y >= arena.length) || 
+                            (x + o.x < 0) || 
+                            (x + o.x >= arena[0].length) || 
+                            (arena[y + o.y] && arena[y + o.y][x + o.x] !== null)) { 
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) { 
+                        if (arena[y + player.y] && arena[y + player.y][x + player.x] === null) {
+                            arena[y + player.y][x + player.x] = {
+                                color: player.color,
+                                letter: value 
+                            };
+                        }
+                    }
+                });
+            });
+        }
+
+        function rotate(dir = 1) {
+            if (gameOver) return;
+            const originalMatrix = currentPiece.matrix;
+            const originalX = currentPiece.x;
+            const rotatedMatrix = originalMatrix.map(row => [...row]);
+            rotateMatrix(rotatedMatrix, dir);
+            currentPiece.matrix = rotatedMatrix;
+
+            const offsets = [0, 1, -1, 2, -2]; 
+            for (let offset of offsets) {
+                currentPiece.x = originalX + offset;
+                if (!collide(grid, currentPiece)) return;
+            }
+
+            currentPiece.matrix = originalMatrix;
+            currentPiece.x = originalX;
+        }
+
+        function rotateMatrix(matrix, dir) {
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) {
+                    [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+                }
+            }
+            if (dir > 0) matrix.forEach(row => row.reverse());
+            else matrix.reverse();
+        }
+
+        function move(dir) {
+            if (gameOver) return;
+            currentPiece.x += dir;
+            if (collide(grid, currentPiece)) currentPiece.x -= dir;
+        }
+
+        function drop() {
+            if (gameOver) return;
+            currentPiece.y++;
+            if (collide(grid, currentPiece)) {
+                currentPiece.y--;
+                merge(grid, currentPiece);
+                arenaSweep();
+                spawnPiece();
+            }
+            dropCounter = 0;
+        }
+
+        function arenaSweep() {
+            let rowCount = 0;
+            outer: for (let y = grid.length - 1; y >= 0; --y) { 
+                for (let x = 0; x < grid[y].length; ++x) {
+                    if (grid[y][x] === null) continue outer;
+                }
+
+                const rowData = grid[y]; 
+                processWordleGuess(rowData);
+                
+                grid.splice(y, 1);
+                grid.unshift(Array(COLS).fill(null));
+                
+                // CRITICAL FIX: Offset y because we just shifted new rows down into this index
+                ++y;
+
+                rowCount++;
+                score++;
+                dropInterval = Math.max(100, 1000 - (score * 50)); 
+            }
+            document.getElementById('scoreDisplay').innerText = score;
+        }
+
+        // --- Wordle Logic ---
+
+        function processWordleGuess(rowCells) {
+            const guessLetters = rowCells.map(c => c.letter);
+            const guessWord = guessLetters.join('');
+            
+            const result = evaluateGuess(guessWord, targetWord);
+            
+            // 1. Handle ABSENT letters (Gray) - Update Keyboard ONLY
+            result.forEach((state, i) => {
+                const char = guessLetters[i];
+                updateKeyboard(char, state); 
+            });
+
+            // 2. Handle CORRECT letters (Green) - Check if fully solved
+            // First, update our knowledge of solved positions
+            result.forEach((state, i) => {
+                if (state === 'correct') {
+                    solvedIndices[i] = true;
+                }
+            });
+
+            // Now, check if any letter in the target word is fully accounted for by green tiles
+            const targetLetters = targetWord.split('');
+            const uniqueLetters = [...new Set(targetLetters)];
+
+            uniqueLetters.forEach(letter => {
+                // Find all indices where this letter appears in the target word
+                const indicesInTarget = [];
+                for(let i=0; i<5; i++) {
+                    if (targetLetters[i] === letter) indicesInTarget.push(i);
+                }
+
+                // Check if ALL those indices are currently marked as true in solvedIndices
+                const allInstancesFound = indicesInTarget.every(idx => solvedIndices[idx]);
+
+                if (allInstancesFound) {
+                    // If we found every instance of 'A', remove 'A' from the pool
+                    availableLetters = availableLetters.split(letter).join('');
+                }
+            });
+
+            // Add to history and render sorted list
+            guessHistory.push({
+                letters: guessLetters,
+                states: result,
+                index: guessHistory.length // Used for stable sorting (newest first within category)
+            });
+            renderSortedGuesses();
+
+            // Check if letter pool is empty
+            if (availableLetters.length === 0) {
+                gameOver = true;
+                triggerFinalPhase("NO LETTERS LEFT!", "The letter pool is empty.<br>Make your final guess!");
+            }
+        }
+
+        function evaluateGuess(guess, target) {
+            const states = Array(5).fill('absent');
+            const targetArr = target.split('');
+            const guessArr = guess.split('');
+
+            guessArr.forEach((char, i) => {
+                if (char === targetArr[i]) {
+                    states[i] = 'correct';
+                    targetArr[i] = null; 
+                    guessArr[i] = null;
+                }
+            });
+
+            guessArr.forEach((char, i) => {
+                if (char !== null && targetArr.includes(char)) {
+                    states[i] = 'present';
+                    const idx = targetArr.indexOf(char);
+                    targetArr[idx] = null;
+                }
+            });
+
+            return states;
+        }
+
+        function getGuessCategory(states) {
+            if (states.includes('correct')) return 3; // High priority
+            if (states.includes('present')) return 2; // Medium priority
+            return 1; // Low priority
+        }
+
+        function renderSortedGuesses() {
+            const container = document.getElementById('guessContainer');
+            container.innerHTML = '';
+
+            if (guessHistory.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-gray-600 mt-10 italic text-sm">
+                        Clear a line in Tetris<br>to reveal a guess.
+                    </div>`;
+                return;
+            }
+
+            // Sort: Category Descending (Green > Yellow > Gray), then Newest First
+            const sorted = [...guessHistory].sort((a, b) => {
+                const catA = getGuessCategory(a.states);
+                const catB = getGuessCategory(b.states);
+                if (catA !== catB) return catB - catA;
+                return b.index - a.index;
+            });
+
+            sorted.forEach(item => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'flex gap-1 justify-center';
+
+                item.letters.forEach((char, i) => {
+                    const tile = document.createElement('div');
+                    tile.className = `w-10 h-10 border-2 flex items-center justify-center font-bold text-xl uppercase ${item.states[i]}`;
+                    tile.innerText = char;
+                    rowDiv.appendChild(tile);
+                });
+
+                container.appendChild(rowDiv);
+            });
+        }
+
+        // --- Drawing ---
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            grid.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value) {
+                        drawBlock(x, y, value.color, value.letter);
+                    } else {
+                        ctx.strokeStyle = '#222';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(x * 50, y * 50, 50, 50);
+                    }
+                });
+            });
+
+            if (currentPiece && !gameOver) {
+                currentPiece.matrix.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) {
+                            drawBlock(x + currentPiece.x, y + currentPiece.y, currentPiece.color, value);
+                        }
+                    });
+                });
+            }
+        }
+
+        function drawBlock(x, y, color, letter) {
+            const px = x * 50;
+            const py = y * 50;
+            
+            if (py < 0 || px < 0 || px >= canvas.width || py >= canvas.height) return;
+
+            ctx.fillStyle = color;
+            ctx.fillRect(px + 2, py + 2, 46, 46);
+            
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.fillRect(px + 2, py + 2, 46, 10);
+            ctx.fillRect(px + 2, py + 2, 10, 46);
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 30px Inter';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(letter || '', px + 25, py + 25);
+        }
+
+        // --- Game Loop ---
+
+        function loop(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) {
+                drop();
+            }
+
+            draw();
+            if (!gameOver) {
+                animationId = requestAnimationFrame(loop);
+            }
+        }
+
+        function handleInput(event) {
+            if (gameOver) return;
+
+            if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].indexOf(event.code) > -1) {
+                event.preventDefault();
+            }
+
+            switch(event.key) {
+                case 'ArrowLeft': move(-1); break;
+                case 'ArrowRight': move(1); break;
+                case 'ArrowDown': drop(); break;
+                case 'ArrowUp': rotate(); break;
+                case ' ': 
+                    while(!collide(grid, currentPiece)) {
+                        currentPiece.y++;
+                    }
+                    currentPiece.y--; 
+                    merge(grid, currentPiece);
+                    arenaSweep();
+                    spawnPiece();
+                    break; 
+            }
+        }
+
+        // --- Final Phase ---
+
+        function triggerFinalPhase(title = "GRID FULL!", message = "The Tetris phase is over.<br>Review your clues on the right.") {
+            cancelAnimationFrame(animationId);
+            
+            // Update text
+            document.getElementById('finalTitle').innerHTML = title;
+            document.getElementById('finalMessage').innerHTML = message;
+
+            // UI Switch
+            document.getElementById('gameContainer').classList.add('hidden');
+            document.getElementById('mobileControls').classList.add('hidden');
+            document.getElementById('finalPhaseUi').classList.remove('hidden');
+            
+            document.getElementById('finalInput').focus();
+        }
+
+        function submitFinalGuess() {
+            const input = document.getElementById('finalInput');
+            const guess = input.value.toUpperCase().trim();
+
+            if (guess.length !== 5) {
+                alert("Please enter exactly 5 letters.");
+                return;
+            }
+
+            const win = (guess === targetWord);
+            
+            if (win) {
+                streak++;
+            } else {
+                streak = 0;
+            }
+            document.getElementById('uiStreak').innerText = streak;
+
+            document.getElementById('finalPhaseUi').classList.add('hidden');
+            
+            // Pass the previous streak logic if lost (we already reset it to 0, but show result needs to know context if needed, or simple logic)
+            // Actually, we reset streak to 0 above if loss.
+            // But we want to say "You won X rounds in a row". 
+            // So if we lose, streak is now 0. We need to know what it WAS.
+            // Let's refactor slightly to be safer.
+            
+            showResult(win);
+        }
+
+        function showResult(isWin) {
+            const modal = document.getElementById('resultModal');
+            const icon = document.getElementById('resultIcon');
+            const title = document.getElementById('resultTitle');
+            const msg = document.getElementById('resultMessage');
+            const wordDisplay = document.getElementById('revealWord');
+
+            modal.classList.remove('hidden');
+            wordDisplay.innerText = targetWord;
+
+            if (isWin) {
+                icon.innerHTML = '🏆';
+                title.innerText = "VICTORY!";
+                title.className = "text-2xl font-bold mb-2 text-[#538d4e]";
+                msg.innerText = "Streak: " + streak;
+            } else {
+                // If lost, we just reset streak to 0. The actual rounds won in a row is what the streak WAS.
+                // But since we can't travel back in time, let's assume the user knows their streak was X before it became 0.
+                // Or we can say "Streak Ended".
+                icon.innerHTML = '💀';
+                title.innerText = "DEFEAT";
+                title.className = "text-2xl font-bold mb-2 text-red-500";
+                
+                // Since streak is already reset to 0, we can't show the number unless we cached it.
+                // However, the prompt says "say how many rounds you won in a row".
+                // I'll grab the number before reset in a future version if needed, 
+                // but for now "Streak Ended" implies it's over. 
+                // Wait, I can just use a temp variable in submitFinalGuess.
+                // Let's stick to the current implementation where it resets immediately.
+                // I will update the logic in submitFinalGuess to pass the count.
+                
+                // Actually, let me hot-fix submitFinalGuess right here in the logic block
+            }
+        }
+        
+        // Re-writing submitFinalGuess and showResult to be consistent with streak reporting
+        
+        const oldSubmit = submitFinalGuess;
+        submitFinalGuess = function() {
+             const input = document.getElementById('finalInput');
+            const guess = input.value.toUpperCase().trim();
+
+            if (guess.length !== 5) {
+                alert("Please enter exactly 5 letters.");
+                return;
+            }
+
+            const win = (guess === targetWord);
+            let roundsWon = streak; // Capture current streak
+
+            if (win) {
+                streak++;
+                roundsWon = streak;
+            } else {
+                streak = 0;
+            }
+            document.getElementById('uiStreak').innerText = streak;
+            document.getElementById('finalPhaseUi').classList.add('hidden');
+            
+            showResultWithStreak(win, roundsWon);
+        }
+
+        function showResultWithStreak(isWin, count) {
+             const modal = document.getElementById('resultModal');
+            const icon = document.getElementById('resultIcon');
+            const title = document.getElementById('resultTitle');
+            const msg = document.getElementById('resultMessage');
+            const wordDisplay = document.getElementById('revealWord');
+
+            modal.classList.remove('hidden');
+            wordDisplay.innerText = targetWord;
+
+            if (isWin) {
+                icon.innerHTML = '🏆';
+                title.innerText = "VICTORY!";
+                title.className = "text-2xl font-bold mb-2 text-[#538d4e]";
+                msg.innerText = "Current Streak: " + count;
+            } else {
+                icon.innerHTML = '💀';
+                title.innerText = "DEFEAT";
+                title.className = "text-2xl font-bold mb-2 text-red-500";
+                msg.innerText = "You won " + count + " rounds in a row!";
+            }
+        }
+
+    </script>
+</body>
+</html>
