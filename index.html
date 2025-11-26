@@ -196,8 +196,7 @@
     <script>
         // --- Game Constants ---
         const COLS = 5;
-        const ROWS = 10; 
-        const BLOCK_SIZE = 50; 
+        const ROWS = 13; // Increased to 13
         
         // A curated list of 5-letter words (Subset for demo purposes) used as fallback
         const DEFAULT_WORDS = [
@@ -668,6 +667,10 @@
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
+            // Calculate dynamic block size
+            const blockW = 250 / COLS;
+            const blockH = 500 / ROWS;
+
             grid.forEach((row, y) => {
                 row.forEach((value, x) => {
                     if (value) {
@@ -675,7 +678,7 @@
                     } else {
                         ctx.strokeStyle = '#222';
                         ctx.lineWidth = 1;
-                        ctx.strokeRect(x * 50, y * 50, 50, 50);
+                        ctx.strokeRect(x * blockW, y * blockH, blockW, blockH);
                     }
                 });
             });
@@ -692,23 +695,26 @@
         }
 
         function drawBlock(x, y, color, letter) {
-            const px = x * 50;
-            const py = y * 50;
+            const blockW = 250 / COLS;
+            const blockH = 500 / ROWS;
+
+            const px = x * blockW;
+            const py = y * blockH;
             
             if (py < 0 || px < 0 || px >= canvas.width || py >= canvas.height) return;
 
             ctx.fillStyle = color;
-            ctx.fillRect(px + 2, py + 2, 46, 46);
+            ctx.fillRect(px + 2, py + 2, blockW - 4, blockH - 4);
             
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.fillRect(px + 2, py + 2, 46, 10);
-            ctx.fillRect(px + 2, py + 2, 10, 46);
+            ctx.fillRect(px + 2, py + 2, blockW - 4, blockH * 0.2); // Proportional bevel
+            ctx.fillRect(px + 2, py + 2, 10, blockH - 4);
 
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 30px Inter';
+            ctx.font = 'bold 25px Inter';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(letter || '', px + 25, py + 25);
+            ctx.fillText(letter || '', px + blockW/2, py + blockH/2);
         }
 
         // --- Game Loop ---
@@ -770,73 +776,6 @@
         }
 
         function submitFinalGuess() {
-            const input = document.getElementById('finalInput');
-            const guess = input.value.toUpperCase().trim();
-
-            if (guess.length !== 5) {
-                alert("Please enter exactly 5 letters.");
-                return;
-            }
-
-            const win = (guess === targetWord);
-            
-            if (win) {
-                streak++;
-            } else {
-                streak = 0;
-            }
-            document.getElementById('uiStreak').innerText = streak;
-
-            document.getElementById('finalPhaseUi').classList.add('hidden');
-            
-            // Pass the previous streak logic if lost (we already reset it to 0, but show result needs to know context if needed, or simple logic)
-            // Actually, we reset streak to 0 above if loss.
-            // But we want to say "You won X rounds in a row". 
-            // So if we lose, streak is now 0. We need to know what it WAS.
-            // Let's refactor slightly to be safer.
-            
-            showResult(win);
-        }
-
-        function showResult(isWin) {
-            const modal = document.getElementById('resultModal');
-            const icon = document.getElementById('resultIcon');
-            const title = document.getElementById('resultTitle');
-            const msg = document.getElementById('resultMessage');
-            const wordDisplay = document.getElementById('revealWord');
-
-            modal.classList.remove('hidden');
-            wordDisplay.innerText = targetWord;
-
-            if (isWin) {
-                icon.innerHTML = '🏆';
-                title.innerText = "VICTORY!";
-                title.className = "text-2xl font-bold mb-2 text-[#538d4e]";
-                msg.innerText = "Streak: " + streak;
-            } else {
-                // If lost, we just reset streak to 0. The actual rounds won in a row is what the streak WAS.
-                // But since we can't travel back in time, let's assume the user knows their streak was X before it became 0.
-                // Or we can say "Streak Ended".
-                icon.innerHTML = '💀';
-                title.innerText = "DEFEAT";
-                title.className = "text-2xl font-bold mb-2 text-red-500";
-                
-                // Since streak is already reset to 0, we can't show the number unless we cached it.
-                // However, the prompt says "say how many rounds you won in a row".
-                // I'll grab the number before reset in a future version if needed, 
-                // but for now "Streak Ended" implies it's over. 
-                // Wait, I can just use a temp variable in submitFinalGuess.
-                // Let's stick to the current implementation where it resets immediately.
-                // I will update the logic in submitFinalGuess to pass the count.
-                
-                // Actually, let me hot-fix submitFinalGuess right here in the logic block
-            }
-        }
-        
-        // Re-writing submitFinalGuess and showResult to be consistent with streak reporting
-        
-        const oldSubmit = submitFinalGuess;
-        submitFinalGuess = function() {
              const input = document.getElementById('finalInput');
             const guess = input.value.toUpperCase().trim();
 
